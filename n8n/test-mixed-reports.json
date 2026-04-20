@@ -1,0 +1,12 @@
+{
+  "source": "Test Data",
+  "reports": [
+    { "id": "camp-001", "name": "Campaign Alpha", "metric": 0.5, "status": "critical", "evaluatedAt": "2026-04-20T10:00:00.000Z" },
+    { "id": "camp-002", "name": "Campaign Beta", "metric": 1.8, "status": "warning", "evaluatedAt": "2026-04-20T10:00:00.000Z" },
+    { "id": "camp-003", "name": "Campaign Gamma", "metric": 0.3, "status": "critical", "evaluatedAt": "2026-04-20T10:00:00.000Z" },
+    { "id": "camp-004", "name": "Campaign Delta", "metric": 2.1, "status": "warning", "evaluatedAt": "2026-04-20T10:00:00.000Z" },
+    { "id": "camp-005", "name": "Campaign Epsilon", "metric": 3.5, "status": "ok", "evaluatedAt": "2026-04-20T10:00:00.000Z" }
+  ],
+  "summary": { "total": 5, "ok": 1, "warning": 2, "critical": 2 },
+  "executedAt": "2026-04-20T10:00:00.000Z"
+}

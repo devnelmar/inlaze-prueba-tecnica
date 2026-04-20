@@ -1,0 +1,219 @@
+{
+  "name": "Campaign Alert Pipeline",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "campaign-alerts",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract reports array from webhook payload\nconst reports = $input.first().json.reports || $input.first().json.body?.reports || [];\n\n// Return each report as a separate item for downstream processing\nreturn reports.map(report => ({ json: report }));"
+      },
+      "id": "extract-reports",
+      "name": "Extract Reports",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [470, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "condition-not-ok",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "ok",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "filter-alerts",
+      "name": "Filter: Not OK",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2,
+      "position": [690, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "condition-critical",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "critical",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "switch-status",
+      "name": "IF Critical",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [910, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aggregate all critical campaigns into a single Discord message\n// This avoids Discord rate limiting by sending one request instead of N\nconst items = $input.all();\n\nconst embeds = items.map(item => ({\n  title: item.json.name,\n  color: 15158332,\n  fields: [\n    { name: 'Campaign ID', value: String(item.json.id), inline: true },\n    { name: 'Metric', value: String(item.json.metric), inline: true },\n    { name: 'Status', value: String(item.json.status), inline: true },\n    { name: 'Evaluated At', value: String(item.json.evaluatedAt), inline: false }\n  ]\n}));\n\n// Discord allows max 10 embeds per message\nconst payload = {\n  content: `🚨 **CRITICAL CAMPAIGN ALERT** — ${items.length} campaign(s) need attention`,\n  embeds: embeds.slice(0, 10)\n};\n\nreturn [{ json: payload }];"
+      },
+      "id": "aggregate-critical",
+      "name": "Aggregate Critical",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1130, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "discord-alert",
+      "name": "Discord: Critical Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1350, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://sheets.googleapis.com/v4/spreadsheets/{{ $env.GOOGLE_SHEET_ID || 'YOUR_SHEET_ID' }}/values/Sheet1:append?valueInputOption=RAW",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"values\": [[\n    \"{{ $json.id }}\",\n    \"{{ $json.name }}\",\n    \"{{ $json.metric }}\",\n    \"{{ $json.status }}\",\n    \"{{ $json.evaluatedAt }}\"\n  ]]\n}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "gsheet-warning",
+      "name": "Google Sheet: Warning Log",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1350, 420],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"status\": \"processed\", \"timestamp\": new Date().toISOString(), \"alertsSent\": $input.all().length } }}",
+        "options": {}
+      },
+      "id": "webhook-response",
+      "name": "Webhook Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1570, 300]
+    },
+    {
+      "parameters": {
+        "errorMessage": "={{ \"Campaign alert pipeline error: \" + $json.error?.message || 'Unknown error' }}"
+      },
+      "id": "error-handler",
+      "name": "Error Handler",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [250, 520]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"content\": \"⚠️ **Pipeline Error**\\nWorkflow: Campaign Alert Pipeline\\nError: {{ $json.execution?.error?.message || 'Unknown error' }}\\nTime: {{ new Date().toISOString() }}\"\n}",
+        "options": {}
+      },
+      "id": "error-notification",
+      "name": "Discord: Error Log",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [470, 520]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [{ "node": "Extract Reports", "type": "main", "index": 0 }]
+      ]
+    },
+    "Extract Reports": {
+      "main": [
+        [{ "node": "Filter: Not OK", "type": "main", "index": 0 }]
+      ]
+    },
+    "Filter: Not OK": {
+      "main": [
+        [{ "node": "IF Critical", "type": "main", "index": 0 }]
+      ]
+    },
+    "IF Critical": {
+      "main": [
+        [{ "node": "Aggregate Critical", "type": "main", "index": 0 }],
+        [{ "node": "Google Sheet: Warning Log", "type": "main", "index": 0 }]
+      ]
+    },
+    "Aggregate Critical": {
+      "main": [
+        [{ "node": "Discord: Critical Alert", "type": "main", "index": 0 }]
+      ]
+    },
+    "Discord: Critical Alert": {
+      "main": [
+        [{ "node": "Webhook Response", "type": "main", "index": 0 }]
+      ]
+    },
+    "Google Sheet: Warning Log": {
+      "main": [
+        [{ "node": "Webhook Response", "type": "main", "index": 0 }]
+      ]
+    },
+    "Error Handler": {
+      "main": [
+        [{ "node": "Discord: Error Log", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true
+  }
+}

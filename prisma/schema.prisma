@@ -1,0 +1,30 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Operator {
+  id        String     @id @default(cuid())
+  name      String
+  campaigns Campaign[]
+}
+
+model Campaign {
+  id         String           @id @default(cuid())
+  name       String
+  operatorId String
+  operator   Operator         @relation(fields: [operatorId], references: [id])
+  metrics    CampaignMetric[]
+}
+
+model CampaignMetric {
+  id         String   @id @default(cuid())
+  campaignId String
+  campaign   Campaign @relation(fields: [campaignId], references: [id])
+  roas       Float
+  recordedAt DateTime
+}
