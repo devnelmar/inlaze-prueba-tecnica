@@ -348,15 +348,49 @@ Cada ciclo ejecuta automáticamente:
 3. **Resumen con LLM** via `generateCampaignSummary()` (Parte 4)
 4. **Notificación a Discord** con el resumen (Parte 4 diferenciador)
 
-Configuración por variables de entorno:
-- `REDIS_URL`: conexión a Redis (default: `redis://127.0.0.1:6379`)
-- `MONITOR_INTERVAL_MIN`: intervalo en minutos entre ejecuciones (default: `5`)
+Si algún paso falla (N8N no corriendo, rate limit del LLM, Discord sin configurar), el worker loguea el error y continúa con el siguiente paso sin romperse.
 
-El worker ejecuta el primer ciclo inmediatamente al arrancar, y luego repite según el intervalo configurado. Maneja shutdown graceful con `SIGINT`/`SIGTERM`.
+#### Cómo ejecutar
 
-```bash
-redis-server &  # o: docker run -d -p 6379:6379 redis
-npm run start:worker
+1. **Levantar Redis con Docker:**
+   ```bash
+   docker run -d --name redis -p 6379:6379 redis
+   ```
+2. **Verificar que Redis está corriendo:**
+   ```bash
+   docker exec redis redis-cli ping
+   # Debe responder: PONG
+   ```
+3. **Iniciar el worker:**
+   ```bash
+   npm run start:worker
+   ```
+   El worker ejecuta el primer ciclo inmediatamente y luego repite cada 5 minutos (configurable con `MONITOR_INTERVAL_MIN` en `.env`). Detener con `Ctrl+C`.
+
+#### Configuración
+
+| Variable | Default | Descripción |
+|---|---|---|
+| `REDIS_URL` | `redis://127.0.0.1:6379` | Conexión a Redis |
+| `MONITOR_INTERVAL_MIN` | `5` | Intervalo en minutos entre ejecuciones |
+
+#### Salida esperada
+
+```
+[Worker] Connecting to Redis at redis://127.0.0.1:6379...
+[Worker] Redis connected
+[Worker] Job scheduled: every 5 minutes
+[Worker] Waiting for jobs... (Ctrl+C to stop)
+
+[Job] Starting campaign evaluation at 2026-04-20T11:39:52.949Z
+[Pipeline] Starting evaluation with source: CoinGecko
+[Pipeline] Received 10 items
+[Pipeline] Results saved to ./data/campaign-reports.json
+[Pipeline] Evaluation complete:
+  ✅ OK: 0  ⚠️  Warning: 0  🚨 Critical: 10
+[Job] LLM summary generated (10 critical)
+[Discord] LLM summary sent successfully
+[Job] Cycle complete. Next run in 5 minutes.
 ```
 
 ---
